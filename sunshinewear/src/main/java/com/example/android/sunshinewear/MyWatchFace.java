@@ -21,6 +21,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.res.Resources;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -31,11 +33,15 @@ import android.os.Handler;
 import android.os.Message;
 import android.support.wearable.watchface.CanvasWatchFaceService;
 import android.support.wearable.watchface.WatchFaceStyle;
-import android.text.format.Time;
+import android.util.Log;
 import android.view.SurfaceHolder;
 import android.view.WindowInsets;
 
 import java.lang.ref.WeakReference;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
+import java.util.Locale;
 import java.util.TimeZone;
 import java.util.concurrent.TimeUnit;
 
@@ -47,6 +53,7 @@ public class MyWatchFace extends CanvasWatchFaceService {
     private static final Typeface NORMAL_TYPEFACE =
             Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL);
 
+    private static final String LOG_TAG = MyWatchFace.class.getSimpleName();
     /**
      * Update rate in milliseconds for interactive mode. We update once a second since seconds are
      * displayed in interactive mode.
@@ -84,29 +91,54 @@ public class MyWatchFace extends CanvasWatchFaceService {
     }
 
     private class Engine extends CanvasWatchFaceService.Engine {
+        private static final String DATE_FORMAT = "EEE, MMM d yyyy";
+        private static final String TIME_FORMAT_AMBIENT = "%02d:%02d";
+        private static final String TIME_FORMAT = "%02d:%02d:%02d";
+        private static final char DEGREES = (char) 0x00B0;
         final Handler mUpdateTimeHandler = new EngineHandler(this);
         boolean mRegisteredTimeZoneReceiver = false;
         Paint mBackgroundPaint;
         Paint mTextPaint;
+        Paint mTimePaint;
+        Paint mDatePaint;
+
+        Paint mHighDegreesPaint;
+        Paint mLowDegreesPaint;
+
         boolean mAmbient;
-        Time mTime;
+
+
         final BroadcastReceiver mTimeZoneReceiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context context, Intent intent) {
-                mTime.clear(intent.getStringExtra("time-zone"));
-                mTime.setToNow();
+               String timeZoneId = intent.getStringExtra("time-zone");
+                mCalendar.setTimeZone(TimeZone.getTimeZone(timeZoneId));
             }
         };
         int mTapCount;
 
-        float mXOffset;
-        float mYOffset;
-
+        float mYTimeOffset;
+        float mYDateOffset;
+        float mYLineOffset;
+        float mYIconOffset;
         /**
          * Whether the display supports fewer bits for each color in ambient mode. When true, we
          * disable anti-aliasing in ambient mode.
          */
         boolean mLowBitAmbient;
+
+        //Time and date format
+        private Calendar mCalendar;
+        private DateFormat mDateFormat;
+
+
+
+        // Weather icons
+        private Bitmap mWFWeatherIcon;
+        private Bitmap mWFWeatherIconAmbient;
+        private int mWFWeatherId = 800;
+
+
 
         @Override
         public void onCreate(SurfaceHolder holder) {
@@ -119,15 +151,21 @@ public class MyWatchFace extends CanvasWatchFaceService {
                     .setAcceptsTapEvents(true)
                     .build());
             Resources resources = MyWatchFace.this.getResources();
-            mYOffset = resources.getDimension(R.dimen.digital_y_offset);
-
+            mYTimeOffset = resources.getDimension(R.dimen.digital_y_offset);
+            mYDateOffset = resources.getDimension(R.dimen.digital_y_date_offset);
+            mYLineOffset = resources.getDimension(R.dimen.digital_y_line_offset);
+            mYIconOffset = resources.getDimension(R.dimen.digital_y_icon_offset);
             mBackgroundPaint = new Paint();
             mBackgroundPaint.setColor(resources.getColor(R.color.background));
 
             mTextPaint = new Paint();
             mTextPaint = createTextPaint(resources.getColor(R.color.digital_text));
-
-            mTime = new Time();
+            mTimePaint = createTextPaint(resources.getColor(R.color.digital_text));
+            mDatePaint = createTextPaint(resources.getColor(R.color.digital_min_text));
+            mHighDegreesPaint = createTextPaint(resources.getColor(R.color.digital_text));
+            mLowDegreesPaint = createTextPaint(resources.getColor(R.color.digital_min_text));
+            mCalendar = Calendar.getInstance();
+            mDateFormat = new SimpleDateFormat(DATE_FORMAT, Locale.getDefault());
         }
 
         @Override
@@ -152,8 +190,7 @@ public class MyWatchFace extends CanvasWatchFaceService {
                 registerReceiver();
 
                 // Update time zone in case it changed while we weren't visible.
-                mTime.clear(TimeZone.getDefault().getID());
-                mTime.setToNow();
+                mCalendar.setTimeZone(TimeZone.getDefault());
             } else {
                 unregisterReceiver();
             }
@@ -187,12 +224,17 @@ public class MyWatchFace extends CanvasWatchFaceService {
             // Load resources that have alternate values for round watches.
             Resources resources = MyWatchFace.this.getResources();
             boolean isRound = insets.isRound();
-            mXOffset = resources.getDimension(isRound
-                    ? R.dimen.digital_x_offset_round : R.dimen.digital_x_offset);
-            float textSize = resources.getDimension(isRound
-                    ? R.dimen.digital_text_size_round : R.dimen.digital_text_size);
+            float timeTextSize = resources.getDimension(isRound
+                    ? R.dimen.digital_time_text_size_round : R.dimen.digital_time_text_size);
+            float dateTextSize = resources.getDimension(isRound
+                    ? R.dimen.digital_date_text_size_round : R.dimen.digital_date_text_size);
+            float degreesTextSize = resources.getDimension(isRound
+                    ? R.dimen.digital_degrees_text_size_round : R.dimen.digital_degrees_text_size);
 
-            mTextPaint.setTextSize(textSize);
+            mTextPaint.setTextSize(timeTextSize);
+            mDatePaint.setTextSize(dateTextSize);
+            mHighDegreesPaint.setTextSize(degreesTextSize);
+            mLowDegreesPaint.setTextSize(degreesTextSize);
         }
 
         @Override
@@ -256,12 +298,55 @@ public class MyWatchFace extends CanvasWatchFaceService {
                 canvas.drawRect(0, 0, bounds.width(), bounds.height(), mBackgroundPaint);
             }
 
+            mCalendar.setTimeInMillis(System.currentTimeMillis());
+
+            // Time formatting
             // Draw H:MM in ambient mode or H:MM:SS in interactive mode.
-            mTime.setToNow();
-            String text = mAmbient
-                    ? String.format("%d:%02d", mTime.hour, mTime.minute)
-                    : String.format("%d:%02d:%02d", mTime.hour, mTime.minute, mTime.second);
-            canvas.drawText(text, mXOffset, mYOffset, mTextPaint);
+            String text;
+            int hours =  mCalendar.get(Calendar.HOUR) == 0 ? 12 : mCalendar.get(Calendar.HOUR_OF_DAY);
+            int minutes =  mCalendar.get(Calendar.MINUTE);
+            if (!mAmbient) {
+                int seconds =  mCalendar.get(Calendar.SECOND);
+                text = String.format(TIME_FORMAT, hours, minutes, seconds);
+            }
+            else {
+                text = String.format(TIME_FORMAT_AMBIENT, hours, minutes);
+            }
+            float textWidth = mTextPaint.measureText(text);
+            int textXOffset = (int)(bounds.width() - textWidth)/2;
+            canvas.drawText(text, textXOffset, mYTimeOffset, mTextPaint);
+
+            String date = mDateFormat.format(mCalendar.getTime()).toUpperCase();
+            float datetWidth = mDatePaint.measureText(date);
+            int xDateOffset = (int)(bounds.width() - datetWidth)/2;
+            canvas.drawText(date, xDateOffset, mYDateOffset, mDatePaint);
+            int xlineOffset = (int)(bounds.width() - bounds.width()/5)/2;
+            canvas.drawLine(xlineOffset, mYLineOffset, (xlineOffset + bounds.width()/5),mYLineOffset, mDatePaint);
+
+
+            mWFWeatherIcon = BitmapFactory.decodeResource(
+                    getResources(),
+                    getIconResourceForWeatherCondition(mWFWeatherId));
+            int xIconOffset = (bounds.width() - mWFWeatherIcon.getWidth())/2 - (mWFWeatherIcon.getWidth()) +10;
+            canvas.drawBitmap(mWFWeatherIcon, xIconOffset, mYIconOffset, new Paint());
+
+            Resources resources = MyWatchFace.this.getResources();
+            float yDegreesOffset = mYIconOffset + resources.getDimension(R.dimen.digital_y_degrees_offset);;
+            String highTemperature = "18" + DEGREES;
+            String lowTemperature = "15" + DEGREES;
+
+
+            float xDegreesOffsetHigh = xIconOffset + mWFWeatherIcon.getWidth() + resources.getDimension(R.dimen.digital_x_min_offset);
+            float xDegreesOffsetLow = xDegreesOffsetHigh + resources.getDimension(R.dimen.digital_x_space_offset) + mLowDegreesPaint.measureText(lowTemperature);
+
+            Log.v(LOG_TAG, "xh = " + xDegreesOffsetHigh);
+            Log.v(LOG_TAG, "xl = " + xDegreesOffsetLow);
+
+            Log.v(LOG_TAG, "xIconOffset = " + xIconOffset);
+            canvas.drawText(highTemperature, xDegreesOffsetHigh, yDegreesOffset, mHighDegreesPaint);
+            canvas.drawText(lowTemperature, xDegreesOffsetLow, yDegreesOffset, mLowDegreesPaint);
+
+
         }
 
         /**
@@ -296,4 +381,39 @@ public class MyWatchFace extends CanvasWatchFaceService {
             }
         }
     }
+    /**
+     * Helper method to provide the icon resource id according to the weather condition id returned
+     * by the OpenWeatherMap call.
+     * @param weatherId from OpenWeatherMap API response
+     * @return resource id for the corresponding icon. -1 if no relation is found.
+     */
+    public static int getIconResourceForWeatherCondition(int weatherId) {
+        // Based on weather code data found at:
+        // http://bugs.openweathermap.org/projects/api/wiki/Weather_Condition_Codes
+        if (weatherId >= 200 && weatherId <= 232) {
+            return R.drawable.ic_storm;
+        } else if (weatherId >= 300 && weatherId <= 321) {
+            return R.drawable.ic_light_rain;
+        } else if (weatherId >= 500 && weatherId <= 504) {
+            return R.drawable.ic_rain;
+        } else if (weatherId == 511) {
+            return R.drawable.ic_snow;
+        } else if (weatherId >= 520 && weatherId <= 531) {
+            return R.drawable.ic_rain;
+        } else if (weatherId >= 600 && weatherId <= 622) {
+            return R.drawable.ic_snow;
+        } else if (weatherId >= 701 && weatherId <= 761) {
+            return R.drawable.ic_fog;
+        } else if (weatherId == 761 || weatherId == 781) {
+            return R.drawable.ic_storm;
+        } else if (weatherId == 800) {
+            return R.drawable.ic_clear;
+        } else if (weatherId == 801) {
+            return R.drawable.ic_light_clouds;
+        } else if (weatherId >= 802 && weatherId <= 804) {
+            return R.drawable.ic_cloudy;
+        }
+        return -1;
+    }
+
 }
