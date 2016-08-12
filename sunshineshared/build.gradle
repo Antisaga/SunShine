@@ -1,12 +1,10 @@
-apply plugin: 'com.android.application'
-
+apply plugin: 'com.android.library'
 
 android {
     compileSdkVersion 23
     buildToolsVersion "23.0.3"
 
     defaultConfig {
-        applicationId "com.example.android.sunshine.app"
         minSdkVersion 21
         targetSdkVersion 23
         versionCode 1
@@ -22,7 +20,6 @@ android {
 
 dependencies {
     compile fileTree(dir: 'libs', include: ['*.jar'])
-    compile 'com.google.android.support:wearable:2.0.0-alpha1'
-    compile 'com.google.android.gms:play-services-wearable:8.1.0'
-    compile project(path: ':sunshineshared')
+    testCompile 'junit:junit:4.12'
+    compile 'com.android.support:appcompat-v7:23.4.0'
 }

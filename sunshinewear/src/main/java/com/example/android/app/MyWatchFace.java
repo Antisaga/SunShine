@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.example.android.sunshinewear;
+package com.example.android.app;
 
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -31,16 +31,33 @@ import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
+import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
 import android.support.wearable.watchface.CanvasWatchFaceService;
 import android.support.wearable.watchface.WatchFaceStyle;
 import android.util.Log;
 import android.view.SurfaceHolder;
 import android.view.WindowInsets;
 
+import com.example.android.sunshineshared.WeatherConstants;
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.GooglePlayServicesUtil;
+import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.common.api.ResultCallback;
+import com.google.android.gms.wearable.DataApi;
+import com.google.android.gms.wearable.DataEvent;
+import com.google.android.gms.wearable.DataEventBuffer;
+import com.google.android.gms.wearable.DataItem;
+import com.google.android.gms.wearable.DataMap;
+import com.google.android.gms.wearable.DataMapItem;
+import com.google.android.gms.wearable.MessageApi;
+import com.google.android.gms.wearable.Wearable;
+
 import java.lang.ref.WeakReference;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
+import java.util.Iterator;
 import java.util.Locale;
 import java.util.TimeZone;
 import java.util.concurrent.TimeUnit;
@@ -49,11 +66,12 @@ import java.util.concurrent.TimeUnit;
  * Digital watch face with seconds. In ambient mode, the seconds aren't displayed. On devices with
  * low-bit ambient mode, the text is drawn without anti-aliasing in ambient mode.
  */
-public class MyWatchFace extends CanvasWatchFaceService {
+public class MyWatchFace extends CanvasWatchFaceService implements GoogleApiClient.ConnectionCallbacks, DataApi.DataListener, GoogleApiClient.OnConnectionFailedListener {
     private static final Typeface NORMAL_TYPEFACE =
             Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL);
 
     private static final String LOG_TAG = MyWatchFace.class.getSimpleName();
+    private static final char DEGREES = (char) 0x00B0;
     /**
      * Update rate in milliseconds for interactive mode. We update once a second since seconds are
      * displayed in interactive mode.
@@ -65,9 +83,61 @@ public class MyWatchFace extends CanvasWatchFaceService {
      */
     private static final int MSG_UPDATE_TIME = 0;
 
+    // Weather icons
+    private Bitmap mWFWeatherIcon;
+    private int mWFWeatherId = 800;
+
+    String highTemperature = "loading";
+    String lowTemperature = "...";
+    GoogleApiClient mGoogleApiClient;
+
     @Override
     public Engine onCreateEngine() {
+        Log.d(LOG_TAG, "API Name = " + GooglePlayServicesUtil.GOOGLE_PLAY_SERVICES_VERSION_CODE);
+        mGoogleApiClient = new GoogleApiClient.Builder(MyWatchFace.this)
+                .addConnectionCallbacks(this)
+                .addOnConnectionFailedListener(this)
+                .addApi(Wearable.API)
+                .build();
+        mGoogleApiClient.connect();
         return new Engine();
+    }
+
+    @Override
+    public void onConnected(@Nullable Bundle bundle) {
+        Log.v(LOG_TAG, "MyWatchface is here!");
+        Wearable.DataApi.addListener(mGoogleApiClient, this);
+    }
+
+    @Override
+    public void onConnectionSuspended(int i) {
+        Log.v(LOG_TAG, "MyWatchface connection suspended");
+    }
+
+    @Override
+    public void onConnectionFailed(@NonNull ConnectionResult connectionResult) {
+        Log.v(LOG_TAG, "MyWatchface connection failed! " + connectionResult.getErrorCode());
+    }
+
+    @Override
+    public void onDataChanged(DataEventBuffer dataEventBuffer) {
+        Log.v(LOG_TAG, "MyWatchface onDataChanged!");
+        Iterator iter = dataEventBuffer.iterator();
+        while(iter.hasNext()) {
+            DataEvent event = (DataEvent)iter.next();
+            if (event.getType() == DataEvent.TYPE_CHANGED) {
+                DataItem dataItem = event.getDataItem();
+                if (dataItem.getUri().getPath().equals(WeatherConstants.WEATHER_PARAMS_PATH)) {
+                    DataMap dataMap = DataMapItem.fromDataItem(dataItem).getDataMap();
+                    mWFWeatherId = dataMap.getInt(WeatherConstants.WEATHER_ID);
+                    mWFWeatherIcon = BitmapFactory.decodeResource(
+                            getResources(),
+                            getIconResourceForWeatherCondition(mWFWeatherId));
+                    highTemperature = dataMap.getString(WeatherConstants.HIGH_TEMPERATURE) + DEGREES;
+                    lowTemperature = dataMap.getString(WeatherConstants.LOW_TEMPERATURE) + DEGREES;
+                }
+            }
+        }
     }
 
     private static class EngineHandler extends Handler {
@@ -94,7 +164,7 @@ public class MyWatchFace extends CanvasWatchFaceService {
         private static final String DATE_FORMAT = "EEE, MMM d yyyy";
         private static final String TIME_FORMAT_AMBIENT = "%02d:%02d";
         private static final String TIME_FORMAT = "%02d:%02d:%02d";
-        private static final char DEGREES = (char) 0x00B0;
+
         final Handler mUpdateTimeHandler = new EngineHandler(this);
         boolean mRegisteredTimeZoneReceiver = false;
         Paint mBackgroundPaint;
@@ -133,10 +203,7 @@ public class MyWatchFace extends CanvasWatchFaceService {
 
 
 
-        // Weather icons
-        private Bitmap mWFWeatherIcon;
-        private Bitmap mWFWeatherIconAmbient;
-        private int mWFWeatherId = 800;
+
 
 
 
@@ -166,6 +233,18 @@ public class MyWatchFace extends CanvasWatchFaceService {
             mLowDegreesPaint = createTextPaint(resources.getColor(R.color.digital_min_text));
             mCalendar = Calendar.getInstance();
             mDateFormat = new SimpleDateFormat(DATE_FORMAT, Locale.getDefault());
+            requestWeatherUpdate();
+        }
+
+        private void requestWeatherUpdate() {
+            Log.v(LOG_TAG, "requestWeatherUpdate");
+            Wearable.MessageApi.sendMessage(mGoogleApiClient, "", "/sunshine/watchface/weatherreq", null)
+                    .setResultCallback(new ResultCallback<MessageApi.SendMessageResult>() {
+                        @Override
+                        public void onResult(MessageApi.SendMessageResult sendMessageResult) {
+                            Log.v(LOG_TAG, "SendMessageResult status " + sendMessageResult.getStatus());
+                        }
+                    });
         }
 
         @Override
@@ -332,9 +411,6 @@ public class MyWatchFace extends CanvasWatchFaceService {
 
             Resources resources = MyWatchFace.this.getResources();
             float yDegreesOffset = mYIconOffset + resources.getDimension(R.dimen.digital_y_degrees_offset);;
-            String highTemperature = "18" + DEGREES;
-            String lowTemperature = "15" + DEGREES;
-
 
             float xDegreesOffsetHigh = xIconOffset + mWFWeatherIcon.getWidth() + resources.getDimension(R.dimen.digital_x_min_offset);
             float xDegreesOffsetLow = xDegreesOffsetHigh + resources.getDimension(R.dimen.digital_x_space_offset) + mLowDegreesPaint.measureText(lowTemperature);

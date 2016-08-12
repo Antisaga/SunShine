@@ -28,8 +28,13 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!-- Permissions required for Google Cloud Messaging -->
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="com.google.android.c2dm.permission.RECEIVE" />
+
+    <!-- Permissions required by the wearable  -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="com.google.android.permission.PROVIDE_BACKGROUND" />
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+
 
     <permission
         android:name="com.example.android.sunshine.app.permission.C2D_MESSAGE"
@@ -177,9 +182,24 @@
                 <action android:name="com.google.android.gms.iid.InstanceID" />
             </intent-filter>
         </service>
+        <meta-data
+            android:name="com.google.android.gms.version"
+            android:value="@integer/google_play_services_version" />
+        <service
+            android:name=".sync.SunshineWatchFaceMessageService"
+            android:enabled="true"
+            android:exported="true" >
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.BIND_LISTENER" />
+            </intent-filter>
+        </service>
+
         <service
             android:name=".gcm.RegistrationIntentService"
-            android:exported="false"></service>
+            android:exported="false">
+        </service>
     </application>
+
+
 
 </manifest>

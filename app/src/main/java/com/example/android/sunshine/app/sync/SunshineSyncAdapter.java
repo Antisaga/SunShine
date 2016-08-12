@@ -36,6 +36,14 @@ import com.example.android.sunshine.app.R;
 import com.example.android.sunshine.app.Utility;
 import com.example.android.sunshine.app.data.WeatherContract;
 import com.example.android.sunshine.app.muzei.WeatherMuzeiSource;
+import com.example.android.sunshineshared.WeatherConstants;
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.common.api.ResultCallback;
+import com.google.android.gms.wearable.DataApi;
+import com.google.android.gms.wearable.PutDataMapRequest;
+import com.google.android.gms.wearable.PutDataRequest;
+import com.google.android.gms.wearable.Wearable;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -87,8 +95,31 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
     public static final int LOCATION_STATUS_UNKNOWN = 3;
     public static final int LOCATION_STATUS_INVALID = 4;
 
+    private final GoogleApiClient mGoogleApiClient;
+
+
+
     public SunshineSyncAdapter(Context context, boolean autoInitialize) {
         super(context, autoInitialize);
+
+        // Create API client for Wear
+        mGoogleApiClient = new GoogleApiClient.Builder(context)
+                .addConnectionCallbacks(new GoogleApiClient.ConnectionCallbacks() {
+                    @Override
+                    public void onConnected(Bundle bundle) {
+                    }
+                    @Override
+                    public void onConnectionSuspended(int i) {
+                    }})
+                .addOnConnectionFailedListener(new GoogleApiClient.OnConnectionFailedListener() {
+                    @Override
+                    public void onConnectionFailed(ConnectionResult connectionResult) {
+                    }
+                })
+                .addApi(Wearable.API)
+                .build();
+
+        mGoogleApiClient.connect();
     }
 
     @Override
@@ -330,6 +361,9 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
                 weatherValues.put(WeatherContract.WeatherEntry.COLUMN_WEATHER_ID, weatherId);
 
                 cVVector.add(weatherValues);
+                if (i==0) {
+                    updateWearable(getContext(), weatherValues);
+                }
             }
 
             int inserted = 0;
@@ -356,6 +390,36 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter {
             e.printStackTrace();
             setLocationStatus(getContext(), LOCATION_STATUS_SERVER_INVALID);
         }
+    }
+
+    private void updateWearable(Context context, ContentValues weatherValues) {
+        Log.v(LOG_TAG, "updateWearable");
+        int weatherId = weatherValues.getAsInteger(WeatherContract.WeatherEntry.COLUMN_WEATHER_ID);
+
+        double lowTemp = weatherValues.getAsDouble(WeatherContract.WeatherEntry.COLUMN_MIN_TEMP);
+        double highTemp = weatherValues.getAsDouble(WeatherContract.WeatherEntry.COLUMN_MAX_TEMP);
+
+        String lowTemperature = Utility.formatTemperature(context, lowTemp);
+        Log.v(LOG_TAG, "lowTemperature = " + lowTemperature);
+        String highTemperature = Utility.formatTemperature(context, highTemp);
+        Log.v(LOG_TAG, "highTemperature = " + highTemperature);
+
+        PutDataMapRequest mRequestMap = PutDataMapRequest.create(WeatherConstants.WEATHER_PARAMS_PATH);
+        mRequestMap.getDataMap().putInt(WeatherConstants.WEATHER_ID, weatherId);
+        mRequestMap.getDataMap().putString( WeatherConstants.HIGH_TEMPERATURE, highTemperature);
+        mRequestMap.getDataMap().putString(WeatherConstants.LOW_TEMPERATURE, lowTemperature);
+
+        PutDataRequest request = mRequestMap.asPutDataRequest();
+        Wearable.DataApi.putDataItem(mGoogleApiClient, request).setResultCallback(new ResultCallback<DataApi.DataItemResult>() {
+            @Override
+            public void onResult(DataApi.DataItemResult dataItemResult) {
+                if (dataItemResult.getStatus().isSuccess()) {
+                    Log.v(LOG_TAG, "Success! Data was sent to wearable");
+                } else {
+                    Log.v(LOG_TAG, "Failed! Data was not sent to wearable");
+                }
+            }
+        });
     }
 
     private void updateWidgets() {
