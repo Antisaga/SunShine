@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.example.android.app;
+package com.example.android.sunshine.app;
 
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -71,7 +71,6 @@ public class MyWatchFace extends CanvasWatchFaceService implements GoogleApiClie
             Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL);
 
     private static final String LOG_TAG = MyWatchFace.class.getSimpleName();
-    private static final char DEGREES = (char) 0x00B0;
     /**
      * Update rate in milliseconds for interactive mode. We update once a second since seconds are
      * displayed in interactive mode.
@@ -105,7 +104,7 @@ public class MyWatchFace extends CanvasWatchFaceService implements GoogleApiClie
 
     @Override
     public void onConnected(@Nullable Bundle bundle) {
-        Log.v(LOG_TAG, "MyWatchface is here!");
+        Log.v(LOG_TAG, "MyWatchface is here!!");
         Wearable.DataApi.addListener(mGoogleApiClient, this);
     }
 
@@ -133,8 +132,8 @@ public class MyWatchFace extends CanvasWatchFaceService implements GoogleApiClie
                     mWFWeatherIcon = BitmapFactory.decodeResource(
                             getResources(),
                             getIconResourceForWeatherCondition(mWFWeatherId));
-                    highTemperature = dataMap.getString(WeatherConstants.HIGH_TEMPERATURE) + DEGREES;
-                    lowTemperature = dataMap.getString(WeatherConstants.LOW_TEMPERATURE) + DEGREES;
+                    highTemperature = dataMap.getString(WeatherConstants.HIGH_TEMPERATURE);
+                    lowTemperature = dataMap.getString(WeatherConstants.LOW_TEMPERATURE);
                 }
             }
         }
