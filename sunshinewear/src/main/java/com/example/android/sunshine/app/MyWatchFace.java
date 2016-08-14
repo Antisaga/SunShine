@@ -412,7 +412,7 @@ public class MyWatchFace extends CanvasWatchFaceService implements GoogleApiClie
             float yDegreesOffset = mYIconOffset + resources.getDimension(R.dimen.digital_y_degrees_offset);;
 
             float xDegreesOffsetHigh = xIconOffset + mWFWeatherIcon.getWidth() + resources.getDimension(R.dimen.digital_x_min_offset);
-            float xDegreesOffsetLow = xDegreesOffsetHigh + resources.getDimension(R.dimen.digital_x_space_offset) + mLowDegreesPaint.measureText(lowTemperature);
+            float xDegreesOffsetLow = xDegreesOffsetHigh + resources.getDimension(R.dimen.digital_x_space_offset) + mHighDegreesPaint.measureText(highTemperature);
 
             Log.v(LOG_TAG, "xh = " + xDegreesOffsetHigh);
             Log.v(LOG_TAG, "xl = " + xDegreesOffsetLow);
